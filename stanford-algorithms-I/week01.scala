@@ -2,13 +2,28 @@
  * Counting inversions in a list, piggybacking on merge-sort
  */
 
+import collection.mutable._
+
 // Normal mergesort, for reference
-def merge(as: List[Int], bs: List[Int]): List[Int] = (as, bs) match {
-  case (Nil, Nil) => Nil
-  case (as, Nil) => as
-  case (Nil, bs) => bs
-  case (a::as, b::bs) if a < b => a :: (merge(as, b::bs))
-  case (as, b::bs) => b :: merge(as, bs)
+def merge(as: List[Int], bs: List[Int]): List[Int] = {
+    val xs = ArrayBuffer[Int]()
+    var (i, j) = (0, 0)
+    while (i < as.size || j < bs.size) {
+      if (i == as.size && j < bs.size) {
+        xs += bs(j)
+        j += 1
+      } else if (i < as.size && j == bs.size) {
+        xs += as(i)
+        i += 1
+      } else if (i < as.size && as(i) < bs(j)) {
+        xs += as(i)
+        i += 1
+      } else if (j < bs.size) {
+        xs += bs(j)
+        j += 1
+      }
+    }
+    xs.toList
 }
 
 def mergesort(xs: List[Int]): List[Int] = xs match {
@@ -22,28 +37,37 @@ def mergesort(xs: List[Int]): List[Int] = xs match {
   }
 }
 
-def mergeAndCountSplitInv(as: List[Int], bs: List[Int], acc: Int): (List[Int], Int) = (as, bs) match {
-  case (Nil, Nil) => (Nil, acc)
-  case (as, Nil) => (as, acc)
-  case (Nil, bs) => (bs, acc)
-  case (a::as, b::bs) if a < b => {
-    val (merged, inv) = mergeAndCountSplitInv(as, b::bs, acc)
-    (a :: merged, inv)
-  }
-  case (as, b::bs) => {
-    val (merged, inv) = mergeAndCountSplitInv(as, bs, acc + as.size)
-    (b :: merged, inv)
-  }
+def mergeAndCountSplitInv(as: List[Int], bs: List[Int]): (List[Int], Long) = {
+    val xs = ArrayBuffer[Int]()
+    var (i, j, inv: Long) = (0, 0, 0L)
+    while (i < as.size || j < bs.size) {
+      if (i == as.size && j < bs.size) {
+        xs += bs(j)
+        j += 1
+      } else if (i < as.size && j == bs.size) {
+        xs += as(i)
+        i += 1
+      } else if (i < as.size && as(i) < bs(j)) {
+        xs += as(i)
+        i += 1
+      } else if (j < bs.size) {
+        xs += bs(j)
+        j += 1
+        inv += (as.size - i)
+      }
+    }
+    (xs.toList, inv)
 }
 
-def sortAndCountSplitInv(xs: List[Int]): (List[Int], Int) = xs match {
+def sortAndCountSplitInv(xs: List[Int]): (List[Int], Long) = xs match {
   case Nil => (Nil, 0)
   case xs @ (x :: Nil) => (xs, 0)
   case xs => {
     val half = xs.size / 2
     val (as, leftInv) = sortAndCountSplitInv(xs take half)
     val (bs, rightInv) = sortAndCountSplitInv(xs drop half)
-    mergeAndCountSplitInv(as, bs, leftInv + rightInv)
+    val (merged, splitInv) = mergeAndCountSplitInv(as, bs)
+    (merged, leftInv + rightInv + splitInv)
   }
 }
 
