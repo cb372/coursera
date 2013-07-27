@@ -21,33 +21,39 @@ case class Vertex(id: Id, edges: Set[Edge]) {
   }
 }
 
-case class Graph(vertices: Map[Id, Vertex])
-
-class FinishingTimeTracker(graph: Graph) {
-  private[this] val finishingTimes = Array.fill(graph.vertices.size)(0)
-  private var t = 0
-
-  def markFinished(vertex: Vertex): Unit = {
-    t += 1
-    finishingTimes(t) = vertex.id
-  }
-
+case class Graph(vertices: Map[Id, Vertex]) {
+  def apply(id: Id) = vertices(id)
 }
 
+/** Keeps track of when each node's DFS was finished */
+class FinishingTimeTracker(graph: Graph) {
+  private[this] var finished: List[Id] = Nil
+
+  def markFinished(vertex: Vertex): Unit = {
+    // Add each vertex to the head as it finishes,
+    // so we can easily iterate in reverse-finishing-time order
+    finished = vertex.id :: finished
+  }
+
+  def getVerticesInReverseFinishingTimeOrder: Seq[Id] = finished
+}
+
+/** Keeps track of which nodes have been explored by DFS-Loop */
 class ExploredTracker {
   private[this] val explored = collection.mutable.Set[Id]()
 
-  def markExplored(vertex: Vertex) = explored += vertex.id
+  def markExplored(vertex: Vertex): Unit = 
+    explored += vertex.id
   def isExplored(vertex: Vertex) = explored contains vertex.id
 }
 
+/** Keeps track of the current leader node, and collects nodes into SCCs */
 trait LeaderRecorder {
   protected var sccs = Map[Id, Set[Id]]()
   private var currentLeader: Option[Id] = None
 
-  def setCurrentLeader(vertex: Vertex): Unit = {
+  def setCurrentLeader(vertex: Vertex): Unit = 
     currentLeader = Some(vertex.id)
-  }
 
   def setLeaderFor(vertex: Vertex): Unit = {
     for (s <- currentLeader) {
@@ -57,6 +63,7 @@ trait LeaderRecorder {
   }
 }
 
+/** Tells us the size of the top N biggest SCCs */
 class SCCSizeCalculator extends LeaderRecorder {
   def getSccSizes(limit: Int): Seq[Int] = {
     sccs.values.view.map(_.size).toSeq.sorted.reverse.take(limit)
@@ -98,7 +105,7 @@ def dfs(graph: Graph,
 
   // For each arc (i, j) in G
   for (id <- sourceVertex.getAdjacent(reverse)) {
-    val j: Vertex = graph.vertices(id)
+    val j: Vertex = graph(id)
     // If j not yet explored
     if (!explored.isExplored(j)) {
       // DFS(G, j)
@@ -112,6 +119,7 @@ def dfs(graph: Graph,
   }
 }
   
+/** Runs DFS-Loop on a reversed version of the graph, collecting finishing times */
 def firstPass(graph: Graph): FinishingTimeTracker = {
   val finishingTimes = new FinishingTimeTracker(graph)
   val explored = new ExploredTracker()
@@ -123,11 +131,30 @@ def firstPass(graph: Graph): FinishingTimeTracker = {
   finishingTimes
 }
 
+/** Runs DFS-Loop on the graph, iterating nodes in reverse order of finishing time */
+def secondPass(graph: Graph, orderedVertices: Seq[Id]): Seq[Int] = {
+  val sccSizeCalculator = new SCCSizeCalculator()
+  val explored = new ExploredTracker()
+  for (i <- orderedVertices) {
+    val v = graph(i)
+    if (!explored.isExplored(v)) {
+      sccSizeCalculator.setCurrentLeader(v)
+      dfs(graph, v, explored, finishingTimes=None, leaderRecorder=Some(sccSizeCalculator))
+    }
+  }
+  sccSizeCalculator.getSccSizes(5)
+}
+
 val input: Iterator[Array[Int]] = {
-  io.Source.fromFile(new java.io.File("SCC-10k.txt"))
+  io.Source.fromFile(new java.io.File("SCC.txt"))
             .getLines
             .map(_.split(" ").map(_.toInt))
 }
 val graph = buildGraph(input)
-
+println(s"Built graph (${graph.vertices.size} nodes)")
+val orderedVertices = firstPass(graph).getVerticesInReverseFinishingTimeOrder
+println("Finished first pass")
+val sccSizes = secondPass(graph, orderedVertices)
+println("Finished second pass")
+println(sccSizes.mkString(","))
 
