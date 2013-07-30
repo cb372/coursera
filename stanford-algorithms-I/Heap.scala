@@ -26,7 +26,20 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
     bubbleUp(insertedIndex, entry)
   }
 
-  def extractMin(): V = ???
+  def extractMin(): V = {
+    // Swap the root and the last leaf
+    swap(0, array.size - 1)
+
+    // Remove the old root, which is now at the end of the array
+    val root = array.remove(array.size - 1)
+
+    // Bubble-down the new root until heap property is restored
+    if (!array.isEmpty)
+      bubbleDown(0, array(0))
+
+    // Return the old root
+    root.value
+  }
 
   def decreaseKey(value: V, newKey: K): Unit = ???
   
@@ -48,8 +61,31 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
     }
   }
 
+  /**
+   * Keep swapping the given element with the smaller of its children
+   * until the heap property is restored, i.e. parent key <= child key.
+   */
+  @tailrec
+  private def bubbleDown(index: Int, entry: KeyValue[K, V]): Unit = {
+    val childIndices = getChildIndices(index)
+    if (!childIndices.isEmpty && heapPropertyViolated(entry.key, childIndices)) {
+      val minChildIndex = childIndices.minBy(array(_).key)
+      swap(index, minChildIndex)
+      bubbleDown(minChildIndex, entry)
+    }
+  }
+
+  private def heapPropertyViolated(parentKey: K, childIndices: Seq[Int]): Boolean = {
+    val childSmallerThanParent = childIndices.find {
+      case index => keyOrdering.compare(parentKey, array(index).key) > 0
+    }
+    childSmallerThanParent.isDefined
+  }
+
   private def hasParent(index: Int) = index > 0
   private def getParentIndex(index: Int) = (Math.floor((index - 1) / 2)).toInt
+  private def getChildIndices(index: Int) = 
+    List(index * 2 + 1, index * 2 + 2).filter(_ < array.size)
 
   private def swap(i: Int, j: Int): Unit = {
     val a = array(i)
