@@ -1,10 +1,8 @@
 import annotation.tailrec
 
-case class KeyValue[K, V](key: K, value: V)
-
 trait Heap[K, V] {
 
-  def insert(entry: KeyValue[K, V]): Unit
+  def insert(key: K, value: V): Unit
 
   def extractMin(): V
 
@@ -12,14 +10,21 @@ trait Heap[K, V] {
 
 }
 
+case class Entry[K, V](key: K, value: V)
+
 class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
-  private[this] val array = collection.mutable.ArrayBuffer.empty[KeyValue[K, V]]
+  // The heap itself, represented as an array
+  private[this] val array = collection.mutable.ArrayBuffer.empty[Entry[K, V]]
+
+  // A map from value to array index (needed to allow lookup by value in decreaseKey())
+  private[this] val map = collection.mutable.Map.empty[V, Int]
+
   private[this] val keyOrdering = implicitly[Ordering[K]]
   
-  def insert(entry: KeyValue[K, V]): Unit = {
+  def insert(key: K, value: V): Unit = {
+    val entry = Entry(key, value)
     // Add entry to end of last level of tree (this may break heap property)
-    array.append(entry)
-    val insertedIndex = array.size - 1
+    val insertedIndex = append(entry)
     println(s"Inserted key ${entry.key} at index $insertedIndex")
 
     // Bubble-up until heap property is restored
@@ -31,7 +36,7 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
     swap(0, array.size - 1)
 
     // Remove the old root, which is now at the end of the array
-    val root = array.remove(array.size - 1)
+    val root = remove(array.size - 1)
 
     // Bubble-down the new root until heap property is restored
     if (!array.isEmpty)
@@ -41,16 +46,41 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
     root.value
   }
 
-  def decreaseKey(value: V, newKey: K): Unit = ???
+  def decreaseKey(value: V, newKey: K): Unit = {
+    val index = map(value)
+    val entry = array(index)
+    require(keyOrdering.compare(newKey, entry.key) < 0, 
+            s"New key ($newKey) must be smaller than existing key (${entry.key})")
+
+    // update the entry's key
+    val updatedEntry = entry.copy(key=newKey)
+    array(index) = updatedEntry
+
+    // Because key has got smaller, bubble-up the entry to its new home
+    bubbleUp(index, updatedEntry)
+  }
   
   override def toString = s"ArrayBufferHeap(${array.mkString(", ")})"
+
+  private def append(entry: Entry[K, V]): Int = {
+    array.append(entry)
+    val insertedIndex = array.size - 1
+    map(entry.value) = insertedIndex
+    insertedIndex
+  }
+
+  private def remove(index: Int): Entry[K, V] = {
+    val removedEntry = array.remove(index)
+    map.remove(removedEntry.value)
+    removedEntry
+  }
 
   /**
    * Keep swapping the given element with its parent until the heap property is restored,
    * i.e. parent key <= child key.
    */
   @tailrec
-  private def bubbleUp(index: Int, entry: KeyValue[K, V]): Unit = {
+  private def bubbleUp(index: Int, entry: Entry[K, V]): Unit = {
     if (hasParent(index)) {
       val parentIndex = getParentIndex(index)
       val parent = array(parentIndex)
@@ -66,9 +96,9 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
    * until the heap property is restored, i.e. parent key <= child key.
    */
   @tailrec
-  private def bubbleDown(index: Int, entry: KeyValue[K, V]): Unit = {
+  private def bubbleDown(index: Int, entry: Entry[K, V]): Unit = {
     val childIndices = getChildIndices(index)
-    if (!childIndices.isEmpty && heapPropertyViolated(entry.key, childIndices)) {
+    if (heapPropertyViolated(entry.key, childIndices)) {
       val minChildIndex = childIndices.minBy(array(_).key)
       swap(index, minChildIndex)
       bubbleDown(minChildIndex, entry)
@@ -91,7 +121,13 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
     val a = array(i)
     val b = array(j)
     println(s"Swapping keys (${a.key}, ${b.key}) at indices ($i, $j)")
+
+    // Swap array elements
     array(i) = b
     array(j) = a
+
+    // Update indices map
+    map(a.value) = j
+    map(b.value) = i
   }
 }
