@@ -11,83 +11,88 @@ case class Entry[K, V](key: K, value: V)
 trait Heap[K, V] {
 
   /** Insert the given key-value pair into the heap */
-  def insert(key: K, value: V): Unit
+  def insert(key: K, value: V): Heap[K, V]
 
   /** Remove the smallest element from the heap (sorted by key) */
-  def extractMin(): Entry[K, V]
+  def extractMin(): (Entry[K, V], Heap[K, V])
 
   /** 
    * Update the key for the given value.
    * If the given key is >= than the current one,
    * no work is done and the heap is left unchanged.
    */
-  def decreaseKey(value: V, newKey: K): Unit
+  def decreaseKey(value: V, newKey: K): Heap[K, V]
 
 }
 
-/** A heap implementation based on ArrayBuffer */
-class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
-  // The heap itself, represented as an array
-  private[this] val array = collection.mutable.ArrayBuffer.empty[Entry[K, V]]
-
-  // A map from value to array index (needed to allow lookup by value in decreaseKey())
-  private[this] val map = collection.mutable.Map.empty[V, Int]
-
+/** An immutable heap implementation based on Vector */
+class VectorHeap[K : Ordering, V](vector: Vector[Entry[K, V]], map: Map[V, Int]) extends Heap[K, V] {
   private[this] val keyOrdering = implicitly[Ordering[K]]
-  
-  def insert(key: K, value: V): Unit = {
+
+  private type State = (Vector[Entry[K,V]], Map[V, Int])
+  private val state = (vector, map)
+  private def updated(state: State): VectorHeap[K, V] = new VectorHeap(state._1, state._2)
+
+  def insert(key: K, value: V): Heap[K, V] = {
     val entry = Entry(key, value)
     // Add entry to end of last level of tree (this may break heap property)
-    val insertedIndex = append(entry)
+    val (insertedIndex, stateAfterAppend) = append(entry, state)
 
     // Bubble-up until heap property is restored
-    bubbleUp(insertedIndex, entry)
+    val stateAfterBubbling = bubbleUp(insertedIndex, entry, stateAfterAppend)
+
+    updated(stateAfterBubbling)
   }
 
-  def extractMin(): Entry[K, V] = {
+  def extractMin(): (Entry[K, V], Heap[K, V]) = {
     // Swap the root and the last leaf
-    swap(0, array.size - 1)
+    val stateAfterSwap = swap(0, vector.size - 1, state)
 
     // Remove the old root, which is now at the end of the array
-    val root = remove(array.size - 1)
+    val (root, stateAfterRemove) = remove(vector.size - 1, stateAfterSwap)
 
     // Bubble-down the new root until heap property is restored
-    if (!array.isEmpty)
-      bubbleDown(0, array(0))
+    val stateAfterBubbleDown = {
+      val oldVector = stateAfterRemove._1
+      if (!oldVector.isEmpty)
+        bubbleDown(0, oldVector(0), stateAfterRemove)
+      else
+        stateAfterRemove
+    }
 
     // Return the old root
-    root
+    (root, updated(stateAfterBubbleDown))
   }
 
-  def decreaseKey(value: V, newKey: K): Unit = {
+  def decreaseKey(value: V, newKey: K): Heap[K, V] = {
     val index = map(value)
-    val entry = array(index)
+    val entry = vector(index)
     
     // Don't do anything if the key has not actually decreased
     if (keyOrdering.compare(newKey, entry.key) >= 0)
-      return
+      return this
 
     // update the entry's key
     val updatedEntry = entry.copy(key=newKey)
-    array(index) = updatedEntry
+    val updatedVector = vector.updated(index, updatedEntry)
 
     // Because key has got smaller, bubble-up the entry to its new home
-    bubbleUp(index, updatedEntry)
+    val stateAfterBubbleUp = bubbleUp(index, updatedEntry, (updatedVector, map))
+
+    updated(stateAfterBubbleUp)
   }
   
-  override def toString = s"ArrayBufferHeap(${array.mkString(", ")})"
+  override def toString = s"VectorHeap(${vector.mkString(", ")})"
 
-  private def append(entry: Entry[K, V]): Int = {
-    array.append(entry)
-    val insertedIndex = array.size - 1
-    map(entry.value) = insertedIndex
-    insertedIndex
+  private def append(entry: Entry[K, V], state: State): (Int, State) = {
+    val (oldVector, oldMap) = state
+    (oldVector.size, ((oldVector :+ entry), oldMap + (entry.value -> vector.size)))
   }
 
-  private def remove(index: Int): Entry[K, V] = {
-    val removedEntry = array.remove(index)
-    map.remove(removedEntry.value)
-    removedEntry
+  private def remove(index: Int, state: State): (Entry[K, V], State) = {
+    val (oldVector, oldMap) = state
+    val removedEntry = oldVector(index)
+    (removedEntry, (oldVector.patch(index, Nil, 1), oldMap - removedEntry.value))
   }
 
   /**
@@ -95,14 +100,17 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
    * i.e. parent key <= child key.
    */
   @tailrec
-  private def bubbleUp(index: Int, entry: Entry[K, V]): Unit = {
+  private def bubbleUp(index: Int, entry: Entry[K, V], state: State): State = {
     if (hasParent(index)) {
       val parentIndex = getParentIndex(index)
-      val parent = array(parentIndex)
+      val parent = state._1(parentIndex)
       if (keyOrdering.compare(parent.key, entry.key) > 0) {
-        swap(index, parentIndex)
-        bubbleUp(parentIndex, entry)
+        return bubbleUp(parentIndex, entry, swap(index, parentIndex, state))
+      } else {
+        state
       }
+    } else {
+      state
     }
   }
 
@@ -111,40 +119,43 @@ class ArrayBufferHeap[K : Ordering, V] extends Heap[K, V] {
    * until the heap property is restored, i.e. parent key <= child key.
    */
   @tailrec
-  private def bubbleDown(index: Int, entry: Entry[K, V]): Unit = {
-    val childIndices = getChildIndices(index)
-    if (heapPropertyViolated(entry.key, childIndices)) {
-      val minChildIndex = childIndices.minBy(array(_).key)
-      swap(index, minChildIndex)
-      bubbleDown(minChildIndex, entry)
+  private def bubbleDown(index: Int, entry: Entry[K, V], state: State): State = {
+    val (oldVector, oldMap) = state
+    val childIndices = getChildIndices(index, oldVector)
+    if (heapPropertyViolated(entry.key, childIndices, oldVector)) {
+      val minChildIndex = childIndices.minBy(oldVector(_).key)
+      val stateAfterSwap = swap(index, minChildIndex, state)
+      bubbleDown(minChildIndex, entry, stateAfterSwap)
+    } else {
+      state
     }
   }
 
-  private def heapPropertyViolated(parentKey: K, childIndices: Seq[Int]): Boolean = {
+  private def heapPropertyViolated(parentKey: K, childIndices: Seq[Int], vector: Vector[Entry[K, V]]): Boolean = {
     val childSmallerThanParent = childIndices.find {
-      case index => keyOrdering.compare(parentKey, array(index).key) > 0
+      case index => keyOrdering.compare(parentKey, vector(index).key) > 0
     }
     childSmallerThanParent.isDefined
   }
 
   private def hasParent(index: Int) = index > 0
   private def getParentIndex(index: Int) = (Math.floor((index - 1) / 2)).toInt
-  private def getChildIndices(index: Int) = 
-    List(index * 2 + 1, index * 2 + 2).filter(_ < array.size)
+  private def getChildIndices(index: Int, vector: Vector[_]) = 
+    List(index * 2 + 1, index * 2 + 2).filter(_ < vector.size)
 
-  private def swap(i: Int, j: Int): Unit = {
-    val a = array(i)
-    val b = array(j)
-
-    // Swap array elements
-    array(i) = b
-    array(j) = a
-
-    // Update indices map
-    map(a.value) = j
-    map(b.value) = i
+  private def swap(i: Int, j: Int, state: State): State = {
+    val (oldVector, oldMap) = state
+    val updatedVector = oldVector.updated(i, oldVector(j)).updated(j, oldVector(i))
+    val updatedMap = oldMap + (oldVector(i).value -> j) + (oldVector(j).value -> i)
+    (updatedVector, updatedMap)
   }
+
 }
+
+object VectorHeap {
+  def apply[K : Ordering, V]() = new VectorHeap(Vector[Entry[K,V]](), Map[V, Int]())
+}
+
 
 type Id = Int
 type Length = Int
@@ -155,36 +166,41 @@ type Graph = Map[Id, Vertex]
 /** Initialize the heap of unprocessed vertices */
 def buildUnprocessedHeap(graph: Graph, sourceVertex: Vertex): Heap[Length, Id] = {
   val unknownDistance = Int.MaxValue
-  val unprocessed: Heap[Length, Id] = new ArrayBufferHeap[Length, Id]
 
   // Add source vertex's adjacent nodes to heap
-  for (e <- sourceVertex.edgesOut) { unprocessed.insert(e.length, e.head) }
+  val heap = sourceVertex.edgesOut.foldLeft[Heap[Length, Id]](VectorHeap[Length, Id]()) {
+    case (heap, e) => heap.insert(e.length, e.head)
+  }
 
   // Add all other vertices to heap with unknown distance
   val unknown = graph.keys.filterNot{ i => 
        i == sourceVertex.id || sourceVertex.edgesOut.find(_.head == i).isDefined 
   }
-  for (i <- unknown) { unprocessed.insert(unknownDistance, i) }
-
-  unprocessed
+  unknown.foldLeft[Heap[Length, Id]](heap) {
+    case (heap, id) => heap.insert(unknownDistance, id)
+  }
 }
 
-case class StepResult(processed: Set[Id], shortestPathLengths: Map[Id, Length])
+case class StepResult(processed: Set[Id], shortestPathLengths: Map[Id, Length], unprocessed: Heap[Length, Id])
 /** Perform one step of Dijkstra's algorithm, i.e. add one vertex to the processed set. */
 def dijkstraStep(graph: Graph,
                  processed: Set[Id], 
                  shortestPathLengths: Map[Id, Length], 
                  unprocessed: Heap[Length, Id]): StepResult = {
-  val nextHeapEntry = unprocessed.extractMin
+  val (nextHeapEntry, heapAfterExtractMin) = unprocessed.extractMin
   val shortestPath = nextHeapEntry.key
   val vertexId = nextHeapEntry.value
 
   // Update shortest path distances for adjacent vertices in V-X
-  for (edge <- graph(vertexId).edgesOut if !(processed contains edge.head)) {
-    unprocessed.decreaseKey(edge.head, shortestPath + edge.length)
+  val updatedHeap = {
+    graph(vertexId).edgesOut
+                   .filterNot(processed contains _.head)
+                   .foldLeft(heapAfterExtractMin) {
+      case (heap, edge) => heap.decreaseKey(edge.head, shortestPath + edge.length)
+    }
   }
 
-  StepResult(processed + vertexId, shortestPathLengths + (vertexId -> shortestPath))
+  StepResult(processed + vertexId, shortestPathLengths + (vertexId -> shortestPath), updatedHeap)
 }
 
 /** 
@@ -193,12 +209,13 @@ def dijkstraStep(graph: Graph,
 def dijkstra(graph: Graph, sourceVertexId: Id): Map[Id, Length] = {
   var processed: Set[Id] = Set(sourceVertexId)
   var shortestPathLengths: Map[Id, Length] = Map(sourceVertexId -> 0)
-  val unprocessed: Heap[Length, Id] = buildUnprocessedHeap(graph: Graph, graph(sourceVertexId))
+  var unprocessed: Heap[Length, Id] = buildUnprocessedHeap(graph: Graph, graph(sourceVertexId))
 
   while (processed.size < graph.size) {
     val stepResult = dijkstraStep(graph, processed, shortestPathLengths, unprocessed)
     processed = stepResult.processed
     shortestPathLengths = stepResult.shortestPathLengths
+    unprocessed = stepResult.unprocessed
   }
 
   shortestPathLengths
@@ -209,10 +226,10 @@ val input: Iterator[(Id, List[(Id, Length)])] = {
   io.Source.fromFile("dijkstraData.txt")
     .getLines
     .map(_.split("\t").toList)
-    .map { 
+    .collect { 
       case x :: xs => {
         val id = x.toInt
-        val edges = xs.map(_.split(",").toList).map {
+        val edges = xs.map(_.split(",").toList).collect {
           case x::y::Nil => (x.toInt, y.toInt)
         }
         (id, edges)
