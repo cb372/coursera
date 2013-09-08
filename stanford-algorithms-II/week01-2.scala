@@ -66,4 +66,7 @@ val mst = prim(graph)
 
 // WEIRD: sum gives completely the wrong answer?!
 val wrongTotalCost = mst.map(_.cost.toLong).sum // gives -3444810
+
+// No, you idiot. Edge costs are not distinct, so mst.map(_.cost) results in a smaller set than mst.
+
 val totalCost = mst.foldLeft(0L){ (acc, edge) => acc + edge.cost } // gives correct answer: -3612829
