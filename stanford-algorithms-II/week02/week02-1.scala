@@ -31,11 +31,12 @@ object Week02_1 extends App {
     def recurse(edges: Seq[Edge], k: Int, unionFind: UnionFind[Id]): Cost = {
       if (unionFind.size <= k) {
         // We are down to k clusters -> finished.
-        // Spacing of cluster is the cost of the next edge
-        edges.head.cost
+        // Spacing of cluster is the cost of the next *separated* edge
+        val (remainingEdges, _) = skipUnseparatedEdges(edges, unionFind)
+        remainingEdges.head.cost 
       } else {
         val (remainingEdges, uf) = skipUnseparatedEdges(edges, unionFind)
-        recurse(edges.tail, k, uf.union(edges.head.node1, edges.head.node2))
+        recurse(remainingEdges.tail, k, uf.union(remainingEdges.head.node1, remainingEdges.head.node2))
       }
     }
 
@@ -53,4 +54,5 @@ object Week02_1 extends App {
   }
 
   println(clusterSpacing(edges, 4))
+
 }
