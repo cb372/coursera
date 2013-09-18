@@ -1,9 +1,9 @@
 import com.github.cb372.collection.UnionFind
 
-object Week02_2 extends App {
+import annotation.tailrec
 
+object Week02_2 extends App {
   type Node = Int
-  type Cost = Int
 
   def bitsToInt(bits: List[Int]): Int = {
     bits.reverse.zipWithIndex.foldLeft(0) {  
@@ -30,21 +30,38 @@ object Week02_2 extends App {
     hamm1s ++ hamm2s
   }
 
-  def clusters(nodes: Seq[Node], k: Int): Cost = {
-    val unionFind = UnionFind(nodes: _*)
+  /**
+   * Count how many clusters are needed to ensure
+   * that no pairs of nodes with Hamming distance <= 2
+   * get split into separate clusters
+   */
+  def clusters(nodes: Set[Node]): Int = {
+    val nodesList = nodes.toList
+    val unionFind = UnionFind(nodesList: _*)
 
-    // TODO
-    0
+    @tailrec
+    def recurse(remainingNodes: List[Node], unionFind: UnionFind[Node]): Int = remainingNodes match {
+      case Nil => unionFind.size // finished -> return number of clusters
+      case n::ns => {
+        // Put the current node and any nodes near it into the same cluster
+        val nearbyNodes = nearbyValues(n).filter(nodes.contains(_))
+        val updatedUnionFind = nearbyNodes.foldLeft(unionFind){ (uf, nearbyNode) => uf.union(n, nearbyNode) }
+        if (ns.size % 1000 == 0) println(s"${ns.size} nodes to go!")
+        recurse(ns, updatedUnionFind)
+      }
+    }
+
+    recurse(nodesList, unionFind)
   }
 
-  val nodes: Seq[Node] = {
+  val nodes: Set[Node] = {
     io.Source.fromFile(new java.io.File("clustering_big.txt"))
       .getLines
       .drop(1)
       .map(_.split(" ").toList.map(_.toInt))
       .map(bitsToInt(_))
-      .toSeq
+      .toSet
   }
 
-  println(nodes.take(10))
+  println(clusters(nodes))
 }
