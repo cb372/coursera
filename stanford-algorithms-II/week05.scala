@@ -1,4 +1,4 @@
-val HUGE: Double = 1000000.0  // huge, but not big enough to cause overflow problems
+val HUGE: Float = 1000000F  // huge, but not big enough to cause overflow problems
 
 type Node = (Double, Double)
 val nodes: Array[Node] = {
@@ -12,11 +12,11 @@ val nodes: Array[Node] = {
 }
 val n = nodes.size
  
-def cost(i1: Int, i2: Int): Double = {
+def cost(i1: Int, i2: Int): Float = {
   import Math._
   val from = nodes(i1)
   val to = nodes(i2)
-  sqrt(pow(from._1 - to._1, 2) + pow(from._2 - to._2, 2))
+  sqrt(pow(from._1 - to._1, 2) + pow(from._2 - to._2, 2)).toFloat
 }
 
 def memoizeBinomCoeffs(max: Int) = {
@@ -65,8 +65,8 @@ def loopCombinations(n: Int, k: Int)(f: Int => Unit): Unit = {
   }
 }
 
-var prev = Array.ofDim[Double](choose(n, 1), n)
-prev(index(1))(0) = 0.0
+var prev = Array.ofDim[Float](choose(n, 1), n)
+prev(index(1))(0) = 0F
 for(i <- 1 until n) {
   val S = 1 << i
   prev(index(S))(0) = HUGE
@@ -82,7 +82,7 @@ def toNodeArray(S: Int): Array[Int] = {
 
 for (m <- 2 to n) {
   println(s"m = $m, choose(n, m) = ${choose(n, m)}")
-  val curr = Array.ofDim[Double](choose(n, m), n)
+  val curr = Array.ofDim[Float](choose(n, m), n)
   loopCombinations(n, m){ S =>
     if (bitIsSet(S, 0)) {
       val nodes = toNodeArray(S)
@@ -104,4 +104,10 @@ for (m <- 2 to n) {
   prev = curr
 }
 
-
+var result = HUGE
+val S = (1 to n).foldLeft(0){case (s, i) => s + (1 << i)}
+for (j <- 2 to n) {
+  println(s"${curr(index(S))(j)} + ${cost(j, 1)} = curr(index(S))(j) + cost(j, 1)")
+  result = result.min(curr(index(S))(j) + cost(j, 1))
+}
+println(result)
