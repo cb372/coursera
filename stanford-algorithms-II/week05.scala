@@ -65,13 +65,6 @@ def loopCombinations(n: Int, k: Int)(f: Int => Unit): Unit = {
   }
 }
 
-var prev = Array.ofDim[Float](choose(n, 1), n)
-prev(index(1))(0) = 0F
-for(i <- 1 until n) {
-  val S = 1 << i
-  prev(index(S))(0) = HUGE
-}
-
 def toNodeArray(S: Int): Array[Int] = {
   var result: List[Int] = Nil
   for (i <- 0 until n) 
@@ -80,9 +73,23 @@ def toNodeArray(S: Int): Array[Int] = {
   result.toArray
 }
 
+var prev = Array.ofDim[Float](choose(n, 1), n)
+prev(index(1))(0) = 0F
+for(i <- 1 until n) {
+  val S = 1 << i
+  prev(index(S))(0) = HUGE
+}
+println(s"m = 1, choose(n, m) = ${choose(n, 1)}")
+for (i <- 0 until n) {
+  val S = 1 << i
+  println(s"A[${toNodeArray(S).mkString("(", ",", ")")}] = ${prev(index(S)).mkString("\t")}")
+}
+
+var curr: Array[Array[Float]] = null
+
 for (m <- 2 to n) {
   println(s"m = $m, choose(n, m) = ${choose(n, m)}")
-  val curr = Array.ofDim[Float](choose(n, m), n)
+  curr = Array.ofDim[Float](choose(n, m), n)
   loopCombinations(n, m){ S =>
     if (bitIsSet(S, 0)) {
       val nodes = toNodeArray(S)
@@ -99,15 +106,15 @@ for (m <- 2 to n) {
           curr(index(S))(j) = min
         }
       }
+      println(s"A[${toNodeArray(S).mkString("(", ",", ")")}] = ${curr(index(S)).mkString("\t")}")
     }
   }
   prev = curr
 }
 
 var result = HUGE
-val S = (1 to n).foldLeft(0){case (s, i) => s + (1 << i)}
-for (j <- 2 to n) {
-  println(s"${curr(index(S))(j)} + ${cost(j, 1)} = curr(index(S))(j) + cost(j, 1)")
-  result = result.min(curr(index(S))(j) + cost(j, 1))
+for (j <- 1 until n) {
+  println(s"${curr(0)(j)} + ${cost(j, 1)} = curr(0)(j) + cost(j, 1)")
+  result = result.min(curr(0)(j) + cost(j, 1))
 }
 println(result)
